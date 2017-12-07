@@ -1,0 +1,21 @@
+{
+  "name": "karelwintersky/monolog-kw-pdo-handler",
+  "description": "A handler for Monolog that stores data via PDO driver to Database",
+  "keywords": ["log", "logging", "monolog", "pdo", "database"],
+  "homepage": "https://github.com/KarelWintersky/monolog.KW-PDO-Handler",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "Karel Wintersky",
+      "email": "karel.wintersky@gmail.com"
+    }
+  ],
+  "require": {
+    "php": "^7.0",
+    "monolog/monolog": ">1.4.0",
+    "ext-pdo_mysql": "*"
+  },
+  "autoload": {
+    "psr-4": {"KWPDOHandler\\": "src/KWPDOHandler"}
+  }
+}
