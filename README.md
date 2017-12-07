@@ -26,8 +26,8 @@ The Handler however needs some parameters:
 - `$pdo` - PDO Instance of your database. Pass along the PDO instantiation of your database connection with your database selected.
 - `$table` - The table name where the logs should be stored.
 - `$additional_fields` - associative array of additional database fields definitions. All additional columns are created
-automatically and the fields can later be used in the extra context section of a record. See examples below. Default is empty array.
-- `$additional_indexes` - associative array of additional database indexes definitions.
+automatically and the fields can later be used in the extra context section of a record. See examples below. _Default is empty array_.
+- `$additional_indexes` - associative array of additional database indexes definitions. _Default is empty array_
 - `$level` - The minimum logging level at which this handler will be triggered. Must be any of standard Monolog logging levels (default: Logger::DEBUG)
 
 # Default fields at logging table
