@@ -18,7 +18,7 @@ use Symfony\Component\VarDumper;
  * @package KarelWintersky\Monolog
  */
 class KWPDOHandler extends AbstractProcessingHandler {
-    const VERSION = '0.1.4';
+    const VERSION = '0.2.0';
 
     /**
      * @var bool defines whether the PDO connection is been initialized
@@ -38,49 +38,79 @@ class KWPDOHandler extends AbstractProcessingHandler {
     /**
      * @var PDOStatement statement to insert a new record
      */
-    private $statement;
+    private $statement = false;
 
     /**
      * @var string the table to store the logs in
      */
     private $table = 'logs';
 
+    /* ============= */
+
     /**
      * @var array default fields that are stored in db
      */
     private $define_default_fields = [
-        'id'        =>  'BIGINT(20) NOT NULL AUTO_INCREMENT PRIMARY KEY',
-        'ipv4'      =>  'int(10) unsigned DEFAULT NULL',
-        'time'      =>  'TIMESTAMP',
-        'level'     =>  'SMALLINT',
-        'channel'   =>  'VARCHAR(64)',
-        'message'   =>  'LONGTEXT'
+        'mysql' =>  [
+            'id'        =>  'BIGINT(20) NOT NULL AUTO_INCREMENT PRIMARY KEY',
+            'ipv4'      =>  'INT(10) UNSIGNED DEFAULT NULL',
+            'time'      =>  'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP',
+            'level'     =>  'SMALLINT(6) DEFAULT NULL',
+            'channel'   =>  'VARCHAR(64) DEFAULT NULL',
+            'message'   =>  'LONGTEXT'
+        ],
+        'sqlite'    =>  [
+            'id'        =>  'INTEGER PRIMARY KEY ASC',
+            'ipv4'      =>  'UNSIGNED INT(10) DEFAULT NULL',
+            'time'      =>  'TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
+            'level'     =>  'SMALLINT',
+            'channel'   =>  'VARCHAR(64)',
+            'message'   =>  'LONGTEXT'
+        ],
+        'pgsql'     =>  [
+
+        ]
     ];
 
     /**
-     * @var array default indexes that are stored in db
+     * default indexes
+     * @var array
      */
     private $define_default_indexes = [
-        'channel'   =>  'INDEX(`channel`) USING HASH',
-        'level'     =>  'INDEX(`level`) USING HASH',
-        'time'      =>  'INDEX(`time`) USING BTREE'
-    ];
+        'mysql' =>  [
+            'channel'   =>  'INDEX(`channel`) USING HASH',
+            'level'     =>  'INDEX(`level`) USING HASH',
+            'time'      =>  'INDEX(`time`) USING BTREE'
+        ],
+        'sqlite'    =>  [
+            //@todo: https://www.sqlite.org/lang_createindex.html
+        ],
+        'pgsql'     =>  [
 
-    private $define_default_indexes_spec = [
-        'channel'   =>  '`channel` USING HASH ON %s (`channel`)',
-        'level'     =>  '`level` USING HASH ON %s (`level`)',
-        'time'      =>  '`time` USING BTREE ON %s (`time`)'
+        ]
     ];
 
     /**
-     * @var string default table definition
+     * default table types
+     *
+     * @var array
      */
-    private $define_table_type = ' ENGINE=MyISAM ';
+    private $define_table_engine = [
+        'mysql'     =>  ' ENGINE=MyISAM ',
+        'sqlite'    =>  '',
+        'pgsql'     =>  ''
+    ];
 
     /**
-     * @var string default table charset
+     * default charsets
+     *
+     * @var array
      */
-    private $define_table_charset = ' DEFAULT CHARSET=utf8 ';
+    private $define_table_charset = [
+        'mysql'     =>  '  DEFAULT CHARSET=utf8 ',
+        'sqlite'    =>  '',
+        'pgsql'     =>  ''
+    ];
 
     /**
      * @var array additional fields
@@ -138,9 +168,11 @@ class KWPDOHandler extends AbstractProcessingHandler {
                                  $additional_indexes = array(), $level = Logger::DEBUG,
                                  $bubbling = true)
     {
-        if ($pdo instanceof \PDO) {
-            $this->pdo = $pdo;
+        if (!($pdo instanceof \PDO)) {
+            dd(__CLASS__ . ' > ' . __METHOD__ . ' > throws critical exception: no PDO connection given');
         }
+
+        $this->pdo = $pdo;
         $this->pdo_driver = $pdo->getAttribute(\PDO::ATTR_DRIVER_NAME);
 
         $this->table = $table;
@@ -149,7 +181,76 @@ class KWPDOHandler extends AbstractProcessingHandler {
         $this->define_additional_indexes = $additional_indexes;
 
         $this->additionalFields = $additional_fields;
+
         parent::__construct($level, $bubbling);
+    }
+
+    /**
+     * Return CREATE TABLE (with indexes) definition
+     *
+     * @return string
+     */
+    private function prepare_table_definition() {
+        $fields = $this->define_default_fields[ $this->pdo_driver ];
+
+        if (!empty($this->define_additional_fields)) {
+            $fields = array_merge($fields, $this->define_additional_fields);
+        }
+
+        $fields_str = join(', ', array_map(function($key, $value) {
+            return "`{$key}` {$value}";
+        }, array_keys($fields), $fields));
+
+        // indexes
+        $indexes = $this->define_default_indexes[ $this->pdo_driver ];
+        if (!empty($this->define_additional_indexes)) {
+            $indexes = array_merge($indexes, $this->define_additional_indexes);
+        }
+
+        $indexes_str = join(', ', array_map(function($key, $value) {
+            return "{$value}";
+        }, array_keys($indexes), $indexes));
+
+        $query_table_initialization
+            = "CREATE TABLE IF NOT EXISTS `{$this->table}`"
+            . " ( {$fields_str} "
+            . ($indexes_str != '' ? " , {$indexes_str} " : '')
+            . " ) ";
+
+        $query_table_initialization .= $this->define_table_engine[ $this->pdo_driver ];
+        $query_table_initialization .= $this->define_table_charset[ $this->pdo_driver ];
+
+        return $query_table_initialization;
+    }
+
+    /**
+     * Return PDO Prepared Statement definition
+     *
+     * @return string
+     */
+    private function prepare_pdo_statement() {
+        $fields = $this->define_default_fields[ $this->pdo_driver ];
+
+        if (!empty($this->define_additional_fields)) {
+            $fields = array_merge($fields, $this->define_additional_fields);
+        }
+
+        $insert_keys = [];
+        $insert_values = [];
+
+        foreach ($fields as $f_key => $f_value) {
+            if ($f_key == 'id' || $f_key == 'time') {
+                continue;
+            } else {
+                $insert_keys[] = "`{$f_key}`";
+                $insert_values[] = ":{$f_key}";
+            }
+        }
+
+        $query_prepared_statement =
+            "INSERT INTO `{$this->table}` (" . join(', ', $insert_keys) . ") VALUES (" . join(', ', $insert_values) . ")";
+
+        return $query_prepared_statement;
     }
 
     /**
@@ -161,82 +262,23 @@ class KWPDOHandler extends AbstractProcessingHandler {
      */
     protected function initialize()
     {
-        $fields = $this->define_default_fields;
-        $indexes = $this->define_default_indexes;
+        $query_table_initialization = $this->prepare_table_definition();
 
-        if (!empty($this->define_additional_fields)) {
-            $fields = array_merge($fields, $this->define_additional_fields);
-        }
+        $query_prepared_statement = $this->prepare_pdo_statement();
 
-        if (!empty($this->define_additional_indexes)) {
-            $indexes = array_merge($indexes, $this->define_additional_indexes);
-        }
+        // dump("query_table_initialization", $query_table_initialization);
+        // dump("query_prepared_statement", $query_prepared_statement);
 
-        $fields_str = join(', ', array_map(function($key, $value) {
-            return "`{$key}` {$value}";
-        }, array_keys($fields), $fields));
+        // init
+        $this->pdo->exec($query_table_initialization);
 
-        $indexes_str = join(', ', array_map(function($key, $value) {
-            return "{$value}";
-        }, array_keys($indexes), $indexes));
+        // $this->pdo->exec($query_table_indexes);
 
-        $query_table_initialization =
-            "CREATE TABLE IF NOT EXISTS `{$this->table}` " .
-            " ($fields_str, {$indexes_str}) ";
+        // prepare statement
+        $this->statement = $this->pdo->prepare( $query_prepared_statement );
 
-        if ($this->pdo_driver == 'mysql')
-            $query_table_initialization .= $this->define_table_type;
-
-        $query_table_initialization .= $this->define_table_charset;
-
-        $insert_keys = [];
-        $insert_values = [];
-
-        /*foreach ($fields as $f_key => $f_value) {
-            if ($f_key == 'id' || $f_key == 'time') {
-                continue;
-            } elseif ($f_key == 'ipv4') {
-                $insert_keys[] = "`{$f_key}`";
-                $insert_values[] = "INET_ATON(:{$f_key})";
-            } else {
-                $insert_keys[] = "`{$f_key}`";
-                $insert_values[] = ":{$f_key}";
-            }
-        }*/
-
-        // SQLite/PgSQL does not supports INET_ATON() function, so we will use ip2long()
-        foreach ($fields as $f_key => $f_value) {
-            if ($f_key == 'id' || $f_key == 'time') {
-                continue;
-            } else {
-                $insert_keys[] = "`{$f_key}`";
-                $insert_values[] = ":{$f_key}";
-            }
-        }
-
-        $query_prepared_statement = "INSERT INTO `{$this->table}` (" .
-            join(', ', $insert_keys) .
-            ") VALUES (" .
-            join(', ', $insert_values) .
-            ")";
-
-        if ($this->pdo) {
-            dump($query_table_initialization);
-            dump($query_prepared_statement);
-            dump($this->statement);
-
-            // init
-            $this->pdo->exec($query_table_initialization);
-
-            // prepare statement
-            $this->statement = $this->pdo->prepare( $query_prepared_statement );
-
-            // set flag
-            $this->initialized = true;
-        } else {
-            dump( $query_table_initialization );
-            dump( $query_prepared_statement );
-        }
+        // set flag
+        $this->initialized = true;
     }
 
     /**
@@ -264,8 +306,6 @@ class KWPDOHandler extends AbstractProcessingHandler {
             }
         }
 
-        dump($insert_array);
-
         try {
             if (!$this->pdo)
                 throw new \Exception('PDO Connection is not established', -1);
@@ -275,6 +315,11 @@ class KWPDOHandler extends AbstractProcessingHandler {
 
             $this->statement->execute($insert_array);
 
+            dump($insert_array);
+
+            dump($this->pdo->errorCode());
+
+
         } catch (\PDOException $e) {
             dump($e->getCode(), $e->getMessage());
         } catch (\Exception $e) {
@@ -282,6 +327,8 @@ class KWPDOHandler extends AbstractProcessingHandler {
         }
 
     }
+
+
 
 }
  
