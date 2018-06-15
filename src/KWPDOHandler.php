@@ -68,7 +68,12 @@ class KWPDOHandler extends AbstractProcessingHandler {
             'message'   =>  'LONGTEXT'
         ],
         'pgsql'     =>  [
-
+            'id'        =>  'BIGSERIAL PRIMARY KEY',
+            'ipv4'      =>  'INT(10) UNSIGNED DEFAULT NULL',
+            'time'      =>  'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP', //@todo: check availability
+            'level'     =>  'SMALLINT DEFAULT NULL',
+            'channel'   =>  'VARCHAR(64) DEFAULT NULL',
+            'message'   =>  'TEXT'
         ]
     ];
 
@@ -83,10 +88,22 @@ class KWPDOHandler extends AbstractProcessingHandler {
             'time'      =>  'INDEX(`time`) USING BTREE'
         ],
         'sqlite'    =>  [
-            //@todo: https://www.sqlite.org/lang_createindex.html
         ],
         'pgsql'     =>  [
+        ]
+    ];
 
+    private $define_default_create_indexes = [
+        'mysql'     =>  [
+        ],
+        'sqlite'    =>  [
+            //@todo: https://www.sqlite.org/lang_createindex.html
+            'channel'   =>  "CREATE INDEX 'channel' on %s ('channel')",
+            'level'     =>  "CREATE INDEX 'level' on %s ('level')",
+            'time'      =>  "CREATE INDEX 'time' on %s ('time')",
+        ],
+        'pgsql'     =>  [
+            //@todo: https://www.postgresql.org/docs/9.1/static/indexes-types.html
         ]
     ];
 
