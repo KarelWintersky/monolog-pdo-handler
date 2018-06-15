@@ -1,20 +1,24 @@
 <?php
 /**
- * User: Arris
+ * User: Karel Wintersky
  * Date: 07.12.2017, time: 6:47
+ * Date: 15.06.2018, time: 20:30
  */
-namespace KWPDOHandler;
+namespace KarelWintersky\Monolog;
 
 use Monolog\Logger;
 use Monolog\Handler\AbstractProcessingHandler;
 use PDO;
 use PDOStatement;
+use Symfony\Component\VarDumper;
 
 /**
+ *
  * Class KWPDOHandler
- * @package KWPDOHandler
+ * @package KarelWintersky\Monolog
  */
 class KWPDOHandler extends AbstractProcessingHandler {
+    const VERSION = '0.1.4';
 
     /**
      * @var bool defines whether the PDO connection is been initialized
@@ -24,7 +28,12 @@ class KWPDOHandler extends AbstractProcessingHandler {
     /**
      * @var PDO pdo object of database connection
      */
-    protected $pdo;
+    protected $pdo = NULL;
+
+    /**
+     * @var string $driver PDO driver
+     */
+    protected $pdo_driver;
 
     /**
      * @var PDOStatement statement to insert a new record
@@ -57,10 +66,21 @@ class KWPDOHandler extends AbstractProcessingHandler {
         'time'      =>  'INDEX(`time`) USING BTREE'
     ];
 
+    private $define_default_indexes_spec = [
+        'channel'   =>  '`channel` USING HASH ON %s (`channel`)',
+        'level'     =>  '`level` USING HASH ON %s (`level`)',
+        'time'      =>  '`time` USING BTREE ON %s (`time`)'
+    ];
+
     /**
      * @var string default table definition
      */
-    private $define_default_table = 'ENGINE=MyISAM DEFAULT CHARSET=utf8';
+    private $define_table_type = ' ENGINE=MyISAM ';
+
+    /**
+     * @var string default table charset
+     */
+    private $define_table_charset = ' DEFAULT CHARSET=utf8 ';
 
     /**
      * @var array additional fields
@@ -80,18 +100,25 @@ class KWPDOHandler extends AbstractProcessingHandler {
      * Get real IPv4 address
      * @return string
      */
-    private function getRealIP()
+    private function getIP()
     {
-        if (!empty($_SERVER['HTTP_CLIENT_IP'])) {
-            $ip = $_SERVER['HTTP_CLIENT_IP'];
-        } elseif (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
-            $ip = $_SERVER['HTTP_X_FORWARDED_FOR'];
-        } elseif (!empty($_SERVER['REMOTE_ADDR'])) {
-            $ip = $_SERVER['REMOTE_ADDR'];
-        } else { // possible cli launched
-            $ip = '127.0.0.1';
+        if (getenv('HTTP_CLIENT_IP')) {
+            $ipAddress = getenv('HTTP_CLIENT_IP');
+        } elseif (getenv('HTTP_X_FORWARDED_FOR')) {
+            $ipAddress = getenv('HTTP_X_FORWARDED_FOR');
+        } elseif (getenv('HTTP_X_FORWARDED')) {
+            $ipAddress = getenv('HTTP_X_FORWARDED');
+        } elseif (getenv('HTTP_FORWARDED_FOR')) {
+            $ipAddress = getenv('HTTP_FORWARDED_FOR');
+        } elseif (getenv('HTTP_FORWARDED')) {
+            $ipAddress = getenv('HTTP_FORWARDED');
+        } elseif (getenv('REMOTE_ADDR')) {
+            $ipAddress = getenv('REMOTE_ADDR');
+        } else {
+            $ipAddress = '127.0.0.1';
         }
-        return $ip;
+
+        return $ipAddress;
     }
 
     /**
@@ -111,9 +138,11 @@ class KWPDOHandler extends AbstractProcessingHandler {
                                  $additional_indexes = array(), $level = Logger::DEBUG,
                                  $bubbling = true)
     {
-        if (!is_null($pdo)) {
+        if ($pdo instanceof \PDO) {
             $this->pdo = $pdo;
         }
+        $this->pdo_driver = $pdo->getAttribute(\PDO::ATTR_DRIVER_NAME);
+
         $this->table = $table;
 
         $this->define_additional_fields = $additional_fields;
@@ -152,13 +181,18 @@ class KWPDOHandler extends AbstractProcessingHandler {
         }, array_keys($indexes), $indexes));
 
         $query_table_initialization =
-            "CREATE TABLE IF NOT EXISTS `{$this->table}`" .
-            " ($fields_str, {$indexes_str}) {$this->define_default_table};";
+            "CREATE TABLE IF NOT EXISTS `{$this->table}` " .
+            " ($fields_str, {$indexes_str}) ";
+
+        if ($this->pdo_driver == 'mysql')
+            $query_table_initialization .= $this->define_table_type;
+
+        $query_table_initialization .= $this->define_table_charset;
 
         $insert_keys = [];
         $insert_values = [];
 
-        foreach ($fields as $f_key => $f_value) {
+        /*foreach ($fields as $f_key => $f_value) {
             if ($f_key == 'id' || $f_key == 'time') {
                 continue;
             } elseif ($f_key == 'ipv4') {
@@ -168,15 +202,29 @@ class KWPDOHandler extends AbstractProcessingHandler {
                 $insert_keys[] = "`{$f_key}`";
                 $insert_values[] = ":{$f_key}";
             }
+        }*/
+
+        // SQLite/PgSQL does not supports INET_ATON() function, so we will use ip2long()
+        foreach ($fields as $f_key => $f_value) {
+            if ($f_key == 'id' || $f_key == 'time') {
+                continue;
+            } else {
+                $insert_keys[] = "`{$f_key}`";
+                $insert_values[] = ":{$f_key}";
+            }
         }
 
-        $query_prepared_statement = "INSERT INTO {$this->table} (" .
+        $query_prepared_statement = "INSERT INTO `{$this->table}` (" .
             join(', ', $insert_keys) .
             ") VALUES (" .
             join(', ', $insert_values) .
-            ");";
+            ")";
 
-        if ($this->pdo instanceof \PDO) {
+        if ($this->pdo) {
+            dump($query_table_initialization);
+            dump($query_prepared_statement);
+            dump($this->statement);
+
             // init
             $this->pdo->exec($query_table_initialization);
 
@@ -186,8 +234,8 @@ class KWPDOHandler extends AbstractProcessingHandler {
             // set flag
             $this->initialized = true;
         } else {
-            var_dump( $query_table_initialization );
-            var_dump( $query_prepared_statement );
+            dump( $query_table_initialization );
+            dump( $query_prepared_statement );
         }
     }
 
@@ -204,7 +252,7 @@ class KWPDOHandler extends AbstractProcessingHandler {
         }
 
         $insert_array = [
-            'ipv4'      =>  $this->getRealIP(),
+            'ipv4'      =>  ip2long($this->getIP()),
             'level'     =>  $record['level'],
             'message'   =>  $record['message'],
             'channel'   =>  $record['channel']
@@ -216,16 +264,21 @@ class KWPDOHandler extends AbstractProcessingHandler {
             }
         }
 
+        dump($insert_array);
+
         try {
-            if ($this->pdo instanceof \PDO) {
-                $this->statement->execute($insert_array);
-            } else {
+            if (!$this->pdo)
                 throw new \Exception('PDO Connection is not established', -1);
-            }
+
+            if (!$this->statement)
+                throw new \Exception('PDO Statement not prepared', -2);
+
+            $this->statement->execute($insert_array);
+
         } catch (\PDOException $e) {
-            var_dump($e->getCode(), $e->getMessage());
+            dump($e->getCode(), $e->getMessage());
         } catch (\Exception $e) {
-            var_dump($e->getCode(), $e->getMessage());
+            dump($e->getCode(), $e->getMessage());
         }
 
     }

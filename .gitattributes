@@ -1,0 +1,9 @@
+* text=auto
+* eol=lf
+
+.gitattributes      export-ignore
+.gitignore          export-ignore
+.git                export-ignore
+vendor              export-ignore
+README.md           export-ignore
+
