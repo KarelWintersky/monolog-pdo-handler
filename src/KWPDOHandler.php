@@ -81,23 +81,14 @@ class KWPDOHandler extends AbstractProcessingHandler {
      * default indexes
      * @var array
      */
-    private $define_default_indexes = [
-        'mysql' =>  [
-            'channel'   =>  'INDEX(`channel`) USING HASH',
-            'level'     =>  'INDEX(`level`) USING HASH',
-            'time'      =>  'INDEX(`time`) USING BTREE'
-        ],
-        'sqlite'    =>  [
-        ],
-        'pgsql'     =>  [
-        ]
-    ];
-
     private $define_default_create_indexes = [
         'mysql'     =>  [
+            'channel'   =>  "CREATE INDEX channel on `%s` (`channel`) USING HASH",
+            'level'     =>  "CREATE INDEX level on `%s` (`level`) USING HASH",
+            'time'      =>  "CREATE INDEX time on  `%s` (`time`) USING BTREE",
         ],
         'sqlite'    =>  [
-            //@todo: https://www.sqlite.org/lang_createindex.html
+            //see https://www.sqlite.org/lang_createindex.html
             'channel'   =>  "CREATE INDEX 'channel' on %s ('channel')",
             'level'     =>  "CREATE INDEX 'level' on %s ('level')",
             'time'      =>  "CREATE INDEX 'time' on %s ('time')",
@@ -147,8 +138,7 @@ class KWPDOHandler extends AbstractProcessingHandler {
      * Get real IPv4 address
      * @return string
      */
-    private function getIP()
-    {
+    private function getIP() {
         if (getenv('HTTP_CLIENT_IP')) {
             $ipAddress = getenv('HTTP_CLIENT_IP');
         } elseif (getenv('HTTP_X_FORWARDED_FOR')) {
@@ -218,26 +208,40 @@ class KWPDOHandler extends AbstractProcessingHandler {
             return "`{$key}` {$value}";
         }, array_keys($fields), $fields));
 
-        // indexes
-        $indexes = $this->define_default_indexes[ $this->pdo_driver ];
-        if (!empty($this->define_additional_indexes)) {
-            $indexes = array_merge($indexes, $this->define_additional_indexes);
-        }
-
-        $indexes_str = join(', ', array_map(function($key, $value) {
-            return "{$value}";
-        }, array_keys($indexes), $indexes));
-
         $query_table_initialization
             = "CREATE TABLE IF NOT EXISTS `{$this->table}`"
-            . " ( {$fields_str} "
-            . ($indexes_str != '' ? " , {$indexes_str} " : '')
-            . " ) ";
+            . " ( {$fields_str} ) ";
 
         $query_table_initialization .= $this->define_table_engine[ $this->pdo_driver ];
         $query_table_initialization .= $this->define_table_charset[ $this->pdo_driver ];
 
         return $query_table_initialization;
+    }
+
+    private function prepare_table_indexes()
+    {
+        $indexes = $this->define_default_create_indexes[ $this->pdo_driver ];
+
+        if (!empty($this->define_additional_indexes)) {
+            $indexes = array_merge($indexes, $this->define_additional_indexes);
+        }
+
+        $indexes_str = '';
+
+        foreach ($indexes as $index_name => $index_def) {
+
+            $state = $this->pdo->query("SHOW INDEX FROM {$this->table} WHERE key_name = '{$index_name}'; ");
+            $v = $state->fetchColumn();
+
+            if ($v == false) {
+                $indexes_str .= sprintf($index_def, $this->table) . ' ; ';
+            }
+
+            if (false) {
+                $this->pdo->exec( sprintf($index_def, $this->table) );
+            }
+        }
+        return $indexes_str;
     }
 
     /**
@@ -279,20 +283,20 @@ class KWPDOHandler extends AbstractProcessingHandler {
      */
     protected function initialize()
     {
+        // init table
         $query_table_initialization = $this->prepare_table_definition();
+        if ($query_table_initialization)
+            $this->pdo->exec($query_table_initialization);
 
-        $query_prepared_statement = $this->prepare_pdo_statement();
-
-        // dump("query_table_initialization", $query_table_initialization);
-        // dump("query_prepared_statement", $query_prepared_statement);
-
-        // init
-        $this->pdo->exec($query_table_initialization);
-
-        // $this->pdo->exec($query_table_indexes);
+        // indexes
+        $query_table_indexes = $this->prepare_table_indexes();
+        if ($query_table_indexes)
+            $this->pdo->exec($query_table_indexes);
 
         // prepare statement
-        $this->statement = $this->pdo->prepare( $query_prepared_statement );
+        $query_prepared_statement = $this->prepare_pdo_statement();
+        if ($query_prepared_statement)
+            $this->statement = $this->pdo->prepare( $query_prepared_statement );
 
         // set flag
         $this->initialized = true;

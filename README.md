@@ -77,7 +77,10 @@ $monologger->notice("File information", [
 ```
 # ToDo
 
-- Check and override default field definitions
+[ ] Check and override default field definitions
+[ ] Update readme : how to write custom indexes
+[ ] Update readme : about SQLite.
+[ ] Implement default indexes for PostgreSQL
 
 
 # License
