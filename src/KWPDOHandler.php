@@ -18,7 +18,7 @@ use Symfony\Component\VarDumper;
  * @package KarelWintersky\Monolog
  */
 class KWPDOHandler extends AbstractProcessingHandler {
-    const VERSION = '0.1.12';
+    const VERSION = '0.2';
 
     /**
      * @var bool defines whether the PDO connection is been initialized
