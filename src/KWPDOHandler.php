@@ -18,12 +18,12 @@ use Symfony\Component\VarDumper;
  * @package KarelWintersky\Monolog
  */
 class KWPDOHandler extends AbstractProcessingHandler {
-    const VERSION = '0.2.0';
+    const VERSION = '0.1.12';
 
     /**
      * @var bool defines whether the PDO connection is been initialized
      */
-    private $initialized = false;
+    private $initialized = FALSE;
 
     /**
      * @var PDO pdo object of database connection
@@ -38,7 +38,7 @@ class KWPDOHandler extends AbstractProcessingHandler {
     /**
      * @var PDOStatement statement to insert a new record
      */
-    private $statement = false;
+    private $statement = FALSE;
 
     /**
      * @var string the table to store the logs in
@@ -94,6 +94,9 @@ class KWPDOHandler extends AbstractProcessingHandler {
             'time'      =>  "CREATE INDEX 'time' on %s ('time')",
         ],
         'pgsql'     =>  [
+            'channel'   =>  "CREATE INDEX channel on `%s` (`channel`)",
+            'level'     =>  "CREATE INDEX level on `%s` (`level`) USING B-tree",
+            'time'      =>  "CREATE INDEX time on  `%s` (`time`) USING B-tree", // ?
             //@todo: https://www.postgresql.org/docs/9.1/static/indexes-types.html
         ]
     ];
@@ -131,7 +134,7 @@ class KWPDOHandler extends AbstractProcessingHandler {
     protected $define_additional_indexes = array();
 
     /*
-     * Methods
+     * ===============================  Methods ========================
      */
 
     /**
@@ -176,7 +179,7 @@ class KWPDOHandler extends AbstractProcessingHandler {
                                  $bubbling = true)
     {
         if (!($pdo instanceof \PDO)) {
-            dd(__CLASS__ . ' > ' . __METHOD__ . ' > throws critical exception: no PDO connection given');
+            dd(__METHOD__ . ' > throws critical exception: no PDO connection given');
         }
 
         $this->pdo = $pdo;
@@ -193,7 +196,7 @@ class KWPDOHandler extends AbstractProcessingHandler {
     }
 
     /**
-     * Return CREATE TABLE (with indexes) definition
+     * Return CREATE TABLE definition
      *
      * @return string
      */
@@ -209,8 +212,7 @@ class KWPDOHandler extends AbstractProcessingHandler {
         }, array_keys($fields), $fields));
 
         $query_table_initialization
-            = "CREATE TABLE IF NOT EXISTS `{$this->table}`"
-            . " ( {$fields_str} ) ";
+            = "CREATE TABLE IF NOT EXISTS `{$this->table}` ( {$fields_str} ) ";
 
         $query_table_initialization .= $this->define_table_engine[ $this->pdo_driver ];
         $query_table_initialization .= $this->define_table_charset[ $this->pdo_driver ];
@@ -218,6 +220,11 @@ class KWPDOHandler extends AbstractProcessingHandler {
         return $query_table_initialization;
     }
 
+    /**
+     * Return CREATE INDEX definitions
+     *
+     * @return string
+     */
     private function prepare_table_indexes()
     {
         $indexes = $this->define_default_create_indexes[ $this->pdo_driver ];
@@ -237,9 +244,6 @@ class KWPDOHandler extends AbstractProcessingHandler {
                 $indexes_str .= sprintf($index_def, $this->table) . ' ; ';
             }
 
-            if (false) {
-                $this->pdo->exec( sprintf($index_def, $this->table) );
-            }
         }
         return $indexes_str;
     }
@@ -276,7 +280,9 @@ class KWPDOHandler extends AbstractProcessingHandler {
 
     /**
      * Initializes this handler.
+     *
      * Creating the table if it not exists.
+     * Creating indexes that not exists.
      * Prepare the sql statment depending on the fields that should be written to the database
      *
      * @return void
@@ -335,11 +341,6 @@ class KWPDOHandler extends AbstractProcessingHandler {
                 throw new \Exception('PDO Statement not prepared', -2);
 
             $this->statement->execute($insert_array);
-
-            dump($insert_array);
-
-            dump($this->pdo->errorCode());
-
 
         } catch (\PDOException $e) {
             dump($e->getCode(), $e->getMessage());

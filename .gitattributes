@@ -5,5 +5,6 @@
 .gitignore          export-ignore
 .git                export-ignore
 vendor              export-ignore
+tests               export-ignore
 README.md           export-ignore
 

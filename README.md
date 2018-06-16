@@ -45,7 +45,7 @@ Given that $pdo is your database instance, you could use the class as follows:
 ```php
 //Import class
 use Monolog\Logger;
-use KWPDOHandler\KWPDOHandler;
+use KarelWintersky\Monolog;
 
 // Create log handler
 // using table `log` with additional fields
@@ -58,7 +58,7 @@ $log_handler = new KWPDOHandler($pdo_handler, 'log', [
     'filesize'  =>  'BIGINT(20) DEFAULT NULL',
     'filetime'  =>  'DATETIME'
 ], [
-    'filename'  =>  'INDEX(`filename`) USING HASH',
+    'filename'  =>  'CREATE INDEX filename on `%s` (`filename`) USING HASH',
 ], Logger::INFO);
 
 // Create logger
@@ -75,6 +75,8 @@ $monologger->notice("File information", [
 ]);
 
 ```
+Note: SQLite does not support 'USING method' for indexes;
+
 # ToDo
 
 [ ] Check and override default field definitions
