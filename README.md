@@ -10,13 +10,13 @@ Handler can log text messages to a specific table and creates the table automati
 Just add the following line to your required section in composer.json and do a `php composer.phar update`.
 
 ```
-"karelwintersky/monolog-kw-pdo-handler": "^0.1.0"
+"karelwintersky/monolog-pdo-handler": "^0.1.0"
 ```
 
 or do
 
 ```
-composer require karelwintersky/monolog-kw-pdo-handler
+composer require karelwintersky/monolog-pdo-handler
 ```
 
 # Usage
