@@ -6,20 +6,16 @@ PDO Handler for Monolog, which allows to store log messages in a MySQL Database 
 Handler can log text messages to a specific table and creates the table automatically if it does not exist.
 
 # Installation
-`monolog.KW-PDO-Handler`` is available via composer.
-Just add the following line to your required section in composer.json and do a `php composer.phar update`.
-
-```
-"karelwintersky/monolog-pdo-handler": "^0.1.0"
-```
-
-or do
+`karelwintersky/monolog-pdo-handler` is available via composer.
 
 ```
 composer require karelwintersky/monolog-pdo-handler
 ```
 
+Minimum PHP version is 7.1
+
 # Usage
+
 Just use it as any other Monolog Handler, push it to the stack of your Monolog Logger instance.
 The Handler however needs some parameters:
 
@@ -40,6 +36,7 @@ automatically and the fields can later be used in the extra context section of a
 - `message` - defined as `LONGTEXT`, message
 
 # Examples
+
 Given that $pdo is your database instance, you could use the class as follows:
 
 ```php
@@ -86,4 +83,5 @@ Note: SQLite does not support 'USING method' for indexes;
 
 
 # License
+
 This tool is free software and is distributed under the MIT license. Please have a look at the LICENSE file for further information.
