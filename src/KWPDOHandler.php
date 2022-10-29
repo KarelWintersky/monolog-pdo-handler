@@ -3,6 +3,7 @@
  * User: Karel Wintersky
  * Date: 07.12.2017, time: 6:47
  * Date: 15.06.2018, time: 20:30
+ * Date: 29.10.2022, time: 21:42 GMT+3
  */
 namespace KarelWintersky\Monolog;
 
@@ -10,16 +11,15 @@ use Monolog\Logger;
 use Monolog\Handler\AbstractProcessingHandler;
 use PDO;
 use PDOStatement;
-use Symfony\Component\VarDumper;
+use RuntimeException;
 
 /**
  *
  * Class KWPDOHandler
  * @package KarelWintersky\Monolog
  */
-class KWPDOHandler extends AbstractProcessingHandler {
-    const VERSION = '0.2';
-
+class KWPDOHandler extends AbstractProcessingHandler
+{
     /**
      * @var bool defines whether the PDO connection is been initialized
      */
@@ -133,16 +133,20 @@ class KWPDOHandler extends AbstractProcessingHandler {
      */
     protected $define_additional_indexes = array();
 
-    /*
-     * ===============================  Methods ========================
+    /**
+     * @var array
      */
+    private $additionalFields = [];
 
     /**
      * Get real IPv4 address
      * @return string
      */
-    private function getIP() {
-        if (getenv('HTTP_CLIENT_IP')) {
+    private static function getIp():string
+    {
+        if (getenv('REMOTE_ADDR')) {
+            $ipAddress = getenv('REMOTE_ADDR');
+        } elseif (getenv('HTTP_CLIENT_IP')) {
             $ipAddress = getenv('HTTP_CLIENT_IP');
         } elseif (getenv('HTTP_X_FORWARDED_FOR')) {
             $ipAddress = getenv('HTTP_X_FORWARDED_FOR');
@@ -152,19 +156,17 @@ class KWPDOHandler extends AbstractProcessingHandler {
             $ipAddress = getenv('HTTP_FORWARDED_FOR');
         } elseif (getenv('HTTP_FORWARDED')) {
             $ipAddress = getenv('HTTP_FORWARDED');
-        } elseif (getenv('REMOTE_ADDR')) {
-            $ipAddress = getenv('REMOTE_ADDR');
         } else {
             $ipAddress = '127.0.0.1';
         }
 
-        return $ipAddress;
+        return explode(',', $ipAddress)[0];
     }
 
     /**
      * Constructor of this class, sets the PDO, table,
      * additional field, additional indexes,
-     * minimim logging level and calls parent constructor
+     * minimum logging level and calls parent constructor
      *
      * @param PDO|null $pdo
      * @param string $table - table for store data
@@ -172,25 +174,28 @@ class KWPDOHandler extends AbstractProcessingHandler {
      * @param array $additional_indexes - additional indexes definition like "['lat'   =>  'INDEX(`lat`) USING BTREE']"
      * @param int $level - minimum logging level (Logger constant)
      * @param bool|true $bubbling
-     * @return KWPDOHandler
+     * @return void
      */
-    public function __construct (\PDO $pdo = null, $table = 'log', $additional_fields = array(),
-                                 $additional_indexes = array(), $level = Logger::DEBUG,
-                                 $bubbling = true)
+    public function __construct ($pdo = null, $table = 'logs',
+                                 array $additional_fields = [],
+                                 array $additional_indexes = [],
+                                 int $level = Logger::DEBUG,
+                                 bool $bubbling = true)
     {
-        if (!($pdo instanceof \PDO)) {
-            dd(__METHOD__ . ' > throws critical exception: no PDO connection given');
+        if (!($pdo instanceof PDO)) {
+            throw new \RuntimeException("KarelWintersky\Monolog\KWPDOHandler reporting: no PDO connection given");
         }
 
         $this->pdo = $pdo;
-        $this->pdo_driver = $pdo->getAttribute(\PDO::ATTR_DRIVER_NAME);
+        $this->pdo_driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
 
         $this->table = $table;
 
-        $this->define_additional_fields = $additional_fields;
-        $this->define_additional_indexes = $additional_indexes;
+        $this->additionalFields
+            = $this->define_additional_fields
+            = $additional_fields;
 
-        $this->additionalFields = $additional_fields;
+        $this->define_additional_indexes = $additional_indexes;
 
         parent::__construct($level, $bubbling);
     }
@@ -200,14 +205,15 @@ class KWPDOHandler extends AbstractProcessingHandler {
      *
      * @return string
      */
-    private function prepare_table_definition() {
+    private function prepare_table_definition(): string
+    {
         $fields = $this->define_default_fields[ $this->pdo_driver ];
 
         if (!empty($this->define_additional_fields)) {
             $fields = array_merge($fields, $this->define_additional_fields);
         }
 
-        $fields_str = join(', ', array_map(function($key, $value) {
+        $fields_str = implode(', ', array_map(function($key, $value) {
             return "`{$key}` {$value}";
         }, array_keys($fields), $fields));
 
@@ -225,7 +231,7 @@ class KWPDOHandler extends AbstractProcessingHandler {
      *
      * @return string
      */
-    private function prepare_table_indexes()
+    private function prepare_table_indexes(): string
     {
         $indexes = $this->define_default_create_indexes[ $this->pdo_driver ];
 
@@ -240,7 +246,7 @@ class KWPDOHandler extends AbstractProcessingHandler {
             $state = $this->pdo->query("SHOW INDEX FROM {$this->table} WHERE key_name = '{$index_name}'; ");
             $v = $state->fetchColumn();
 
-            if ($v == false) {
+            if (!$v) {
                 $indexes_str .= sprintf($index_def, $this->table) . ' ; ';
             }
 
@@ -253,7 +259,8 @@ class KWPDOHandler extends AbstractProcessingHandler {
      *
      * @return string
      */
-    private function prepare_pdo_statement() {
+    private function prepare_pdo_statement(): string
+    {
         $fields = $this->define_default_fields[ $this->pdo_driver ];
 
         if (!empty($this->define_additional_fields)) {
@@ -272,10 +279,7 @@ class KWPDOHandler extends AbstractProcessingHandler {
             }
         }
 
-        $query_prepared_statement =
-            "INSERT INTO `{$this->table}` (" . join(', ', $insert_keys) . ") VALUES (" . join(', ', $insert_values) . ")";
-
-        return $query_prepared_statement;
+        return "INSERT INTO `{$this->table}` (" . join(', ', $insert_keys) . ") VALUES (" . join(', ', $insert_values) . ")";
     }
 
     /**
@@ -283,7 +287,7 @@ class KWPDOHandler extends AbstractProcessingHandler {
      *
      * Creating the table if it not exists.
      * Creating indexes that not exists.
-     * Prepare the sql statment depending on the fields that should be written to the database
+     * Prepare the sql statement depending on the fields that should be written to the database
      *
      * @return void
      */
@@ -314,14 +318,14 @@ class KWPDOHandler extends AbstractProcessingHandler {
      * @param array $record
      * @return void
      */
-    protected function write(array $record) :void
+    protected function write(array $record):void
     {
         if (!$this->initialized) {
             $this->initialize();
         }
 
         $insert_array = [
-            'ipv4'      =>  ip2long($this->getIP()),
+            'ipv4'      =>  ip2long( self::getIP() ),
             'level'     =>  $record['level'],
             'message'   =>  $record['message'],
             'channel'   =>  $record['channel']
@@ -333,21 +337,15 @@ class KWPDOHandler extends AbstractProcessingHandler {
             }
         }
 
-        try {
-            if (!$this->pdo)
-                throw new \Exception('PDO Connection is not established', -1);
-
-            if (!$this->statement)
-                throw new \Exception('PDO Statement not prepared', -2);
-
-            $this->statement->execute($insert_array);
-
-        } catch (\PDOException $e) {
-            dump($e->getCode(), $e->getMessage());
-        } catch (\Exception $e) {
-            dump($e->getCode(), $e->getMessage());
+        if (!$this->pdo) {
+            throw new RuntimeException('PDO Connection is not established', -1);
         }
 
+        if (!$this->statement) {
+            throw new \RuntimeException('PDO Statement not prepared', -2);
+        }
+
+        $this->statement->execute($insert_array);
     }
 
 
