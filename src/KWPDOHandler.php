@@ -69,10 +69,10 @@ class KWPDOHandler extends AbstractProcessingHandler
         ],
         'pgsql'     =>  [
             'id'        =>  'BIGSERIAL PRIMARY KEY',
-            'ipv4'      =>  'INT(10) UNSIGNED DEFAULT NULL',
-            'time'      =>  'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP', //@todo: check availability
+            'ipv4'      =>  'BIGINT DEFAULT NULL',
+            'time'      =>  'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
             'level'     =>  'SMALLINT DEFAULT NULL',
-            'channel'   =>  'VARCHAR(64) DEFAULT NULL',
+            'channel'   =>  'TEXT DEFAULT NULL',
             'message'   =>  'TEXT'
         ]
     ];
@@ -94,9 +94,9 @@ class KWPDOHandler extends AbstractProcessingHandler
             'time'      =>  "CREATE INDEX 'time' on %s ('time')",
         ],
         'pgsql'     =>  [
-            'channel'   =>  "CREATE INDEX channel on `%s` (`channel`)",
-            'level'     =>  "CREATE INDEX level on `%s` (`level`) USING B-tree",
-            'time'      =>  "CREATE INDEX time on  `%s` (`time`) USING B-tree", // ?
+            'channel'   =>  "CREATE INDEX IF NOT EXISTS channel_idx on \"%s\" (\"channel\")",
+            'level'     =>  "CREATE INDEX IF NOT EXISTS level on \"%s\" (\"level\")",
+            'time'      =>  "CREATE INDEX IF NOT EXISTS time on \"%s\" (\"time\")", // ?
             //@todo: https://www.postgresql.org/docs/9.1/static/indexes-types.html
         ]
     ];
@@ -121,6 +121,17 @@ class KWPDOHandler extends AbstractProcessingHandler
         'mysql'     =>  '  DEFAULT CHARSET=utf8 ',
         'sqlite'    =>  '',
         'pgsql'     =>  ''
+    ];
+    
+    /**
+     * default quotation around table names and field names
+     *
+     * @var array
+     */
+    private $define_quote = [
+        'mysql'     =>  '`',
+        'sqlite'    =>  '"',
+        'pgsql'     =>  '"'
     ];
 
     /**
@@ -180,7 +191,7 @@ class KWPDOHandler extends AbstractProcessingHandler
                                  array $additional_fields = [],
                                  array $additional_indexes = [],
                                  int $level = Logger::DEBUG,
-                                 bool $bubbling = true)
+                                 bool $bubbling = true, $include_ipv4 = false)
     {
         if (!($pdo instanceof PDO)) {
             throw new \RuntimeException("KarelWintersky\Monolog\KWPDOHandler reporting: no PDO connection given");
@@ -190,6 +201,8 @@ class KWPDOHandler extends AbstractProcessingHandler
         $this->pdo_driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
 
         $this->table = $table;
+        
+        $this->include_ipv4 = $include_ipv4;
 
         $this->additionalFields
             = $this->define_additional_fields
@@ -208,17 +221,18 @@ class KWPDOHandler extends AbstractProcessingHandler
     private function prepare_table_definition(): string
     {
         $fields = $this->define_default_fields[ $this->pdo_driver ];
+        $quote = $this->define_quote[ $this->pdo_driver ];
 
         if (!empty($this->define_additional_fields)) {
             $fields = array_merge($fields, $this->define_additional_fields);
         }
 
-        $fields_str = implode(', ', array_map(function($key, $value) {
-            return "`{$key}` {$value}";
+        $fields_str = implode(', ', array_map(function($key, $value) use ($quote) {
+            return "{$quote}{$key}{$quote} {$value}";
         }, array_keys($fields), $fields));
 
         $query_table_initialization
-            = "CREATE TABLE IF NOT EXISTS `{$this->table}` ( {$fields_str} ) ";
+            = "CREATE TABLE IF NOT EXISTS {$quote}{$this->table}{$quote} ( {$fields_str} ) ";
 
         $query_table_initialization .= $this->define_table_engine[ $this->pdo_driver ];
         $query_table_initialization .= $this->define_table_charset[ $this->pdo_driver ];
@@ -243,8 +257,16 @@ class KWPDOHandler extends AbstractProcessingHandler
 
         foreach ($indexes as $index_name => $index_def) {
 
-            $state = $this->pdo->query("SHOW INDEX FROM {$this->table} WHERE key_name = '{$index_name}'; ");
-            $v = $state->fetchColumn();
+            switch($this->pdo_driver):
+                case "pgsql":
+                    // PostgreSQL doesn't have a simple way to check for indexes on a column, but the index check can be done in the $define_default_create_indexes
+                    $v = false;
+                    break;
+                case "mysql":
+                    $state = $this->pdo->query("SHOW INDEX FROM {$this->table} WHERE key_name = '{$index_name}'; ");
+                    $v = $state->fetchColumn();
+                    break;
+            endswitch;
 
             if (!$v) {
                 $indexes_str .= sprintf($index_def, $this->table) . ' ; ';
@@ -262,6 +284,7 @@ class KWPDOHandler extends AbstractProcessingHandler
     private function prepare_pdo_statement(): string
     {
         $fields = $this->define_default_fields[ $this->pdo_driver ];
+        $quote = $this->define_quote[ $this->pdo_driver ];
 
         if (!empty($this->define_additional_fields)) {
             $fields = array_merge($fields, $this->define_additional_fields);
@@ -274,12 +297,12 @@ class KWPDOHandler extends AbstractProcessingHandler
             if ($f_key == 'id' || $f_key == 'time') {
                 continue;
             } else {
-                $insert_keys[] = "`{$f_key}`";
+                $insert_keys[] = "{$quote}{$f_key}{$quote}";
                 $insert_values[] = ":{$f_key}";
             }
         }
 
-        return "INSERT INTO `{$this->table}` (" . join(', ', $insert_keys) . ") VALUES (" . join(', ', $insert_values) . ")";
+        return "INSERT INTO {$quote}{$this->table}{$quote} (" . join(', ', $insert_keys) . ") VALUES (" . join(', ', $insert_values) . ")";
     }
 
     /**
@@ -325,7 +348,7 @@ class KWPDOHandler extends AbstractProcessingHandler
         }
 
         $insert_array = [
-            'ipv4'      =>  ip2long( self::getIP() ),
+            'ipv4'      =>  $this->include_ipv4 ? ip2long( self::getIP() ) : null,
             'level'     =>  $record['level'],
             'message'   =>  $record['message'],
             'channel'   =>  $record['channel']
@@ -333,7 +356,12 @@ class KWPDOHandler extends AbstractProcessingHandler
 
         foreach ($this->define_additional_fields as $f_key=>$f_value) {
             if (array_key_exists($f_key, $record['context'])) {
-                $insert_array[ $f_key ] = $record['context'][ $f_key ];
+                // encode certain additional fields as JSON
+                if(in_array($f_value, ["jsonb", "json"])):
+                    $insert_array[ $f_key ] = json_encode($record['context'][ $f_key ]);
+                else:
+                    $insert_array[ $f_key ] = $record['context'][ $f_key ];
+                endif;
             }
         }
 
@@ -351,4 +379,3 @@ class KWPDOHandler extends AbstractProcessingHandler
 
 
 }
- 
