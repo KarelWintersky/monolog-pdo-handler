@@ -76,10 +76,10 @@ Note: SQLite does not support 'USING method' for indexes;
 
 # ToDo
 
-[ ] Check and override default field definitions
-[ ] Update readme : how to write custom indexes
-[ ] Update readme : about SQLite.
-[ ] Implement default indexes for PostgreSQL
+- [ ] Check and override default field definitions
+- [ ] Update readme : how to write custom indexes
+- [ ] Update readme : about SQLite.
+- [ ] Implement default indexes for PostgreSQL
 
 
 # License
