@@ -45,6 +45,11 @@ class KWPDOHandler extends AbstractProcessingHandler
      */
     private $table = 'logs';
 
+    /**
+     * @var boolean
+     */
+    private $include_ipv4 = FALSE;
+
     /* ============= */
 
     /**
@@ -122,7 +127,7 @@ class KWPDOHandler extends AbstractProcessingHandler
         'sqlite'    =>  '',
         'pgsql'     =>  ''
     ];
-    
+
     /**
      * default quotation around table names and field names
      *
@@ -183,14 +188,15 @@ class KWPDOHandler extends AbstractProcessingHandler
      * @param string $table - table for store data
      * @param array $additional_fields - additional fields definition like "['lat'   =>  'DECIMAL(9,6) DEFAULT NULL']"
      * @param array $additional_indexes - additional indexes definition like "['lat'   =>  'INDEX(`lat`) USING BTREE']"
-     * @param int $level - minimum logging level (Logger constant)
+     * @param int|string|Level $level - minimum logging level (Logger constant)
      * @param bool|true $bubbling
+     * @param bool|false $include_ipv4
      * @return void
      */
     public function __construct ($pdo = null, $table = 'logs',
                                  array $additional_fields = [],
                                  array $additional_indexes = [],
-                                 int $level = Logger::DEBUG,
+                                 $level = Logger::DEBUG,
                                  bool $bubbling = true, $include_ipv4 = false)
     {
         if (!($pdo instanceof PDO)) {
@@ -201,7 +207,7 @@ class KWPDOHandler extends AbstractProcessingHandler
         $this->pdo_driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
 
         $this->table = $table;
-        
+
         $this->include_ipv4 = $include_ipv4;
 
         $this->additionalFields
@@ -338,10 +344,10 @@ class KWPDOHandler extends AbstractProcessingHandler
     /**
      * Writes the record down to the log
      *
-     * @param array $record
+     * @param array|LogRecord $record
      * @return void
      */
-    protected function write(array $record):void
+    protected function write($record):void
     {
         if (!$this->initialized) {
             $this->initialize();
@@ -375,7 +381,4 @@ class KWPDOHandler extends AbstractProcessingHandler
 
         $this->statement->execute($insert_array);
     }
-
-
-
 }
