@@ -42,7 +42,7 @@ Given that $pdo is your database instance, you could use the class as follows:
 ```php
 //Import class
 use Monolog\Logger;
-use KarelWintersky\Monolog;
+use KarelWintersky\Monolog\KWPDOHandler;
 
 // Create log handler
 // using table `log` with additional fields
