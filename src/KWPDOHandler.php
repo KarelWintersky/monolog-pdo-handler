@@ -50,6 +50,15 @@ class KWPDOHandler extends AbstractProcessingHandler
      */
     private $include_ipv4 = FALSE;
 
+    /**
+     * @var boolean whether initialize() runs CREATE TABLE / CREATE INDEX IF NOT EXISTS
+     * before the first write. Set it to false when the table and its indexes already
+     * exist: on PostgreSQL, CREATE INDEX IF NOT EXISTS takes a SHARE lock on the table
+     * even when the index exists and is skipped, so every handler's first write waits
+     * for (and blocks) concurrent INSERTs into the log table.
+     */
+    private $auto_create = TRUE;
+
     /* ============= */
 
     /**
@@ -191,13 +200,15 @@ class KWPDOHandler extends AbstractProcessingHandler
      * @param int|string|Level $level - minimum logging level (Logger constant)
      * @param bool|true $bubbling
      * @param bool|false $include_ipv4
+     * @param bool|true $auto_create - false skips CREATE TABLE / CREATE INDEX before the first write (the table must already exist)
      * @return void
      */
     public function __construct ($pdo = null, $table = 'logs',
                                  array $additional_fields = [],
                                  array $additional_indexes = [],
                                  $level = Logger::DEBUG,
-                                 bool $bubbling = true, $include_ipv4 = false)
+                                 bool $bubbling = true, $include_ipv4 = false,
+                                 bool $auto_create = true)
     {
         if (!($pdo instanceof PDO)) {
             throw new \RuntimeException("KarelWintersky\Monolog\KWPDOHandler reporting: no PDO connection given");
@@ -209,6 +220,8 @@ class KWPDOHandler extends AbstractProcessingHandler
         $this->table = $table;
 
         $this->include_ipv4 = $include_ipv4;
+
+        $this->auto_create = $auto_create;
 
         $this->additionalFields
             = $this->define_additional_fields
@@ -314,23 +327,25 @@ class KWPDOHandler extends AbstractProcessingHandler
     /**
      * Initializes this handler.
      *
-     * Creating the table if it not exists.
-     * Creating indexes that not exists.
+     * Creating the table if it not exists (unless auto_create is false).
+     * Creating indexes that not exists (unless auto_create is false).
      * Prepare the sql statement depending on the fields that should be written to the database
      *
      * @return void
      */
     protected function initialize()
     {
-        // init table
-        $query_table_initialization = $this->prepare_table_definition();
-        if ($query_table_initialization)
-            $this->pdo->exec($query_table_initialization);
+        if ($this->auto_create) {
+            // init table
+            $query_table_initialization = $this->prepare_table_definition();
+            if ($query_table_initialization)
+                $this->pdo->exec($query_table_initialization);
 
-        // indexes
-        $query_table_indexes = $this->prepare_table_indexes();
-        if ($query_table_indexes)
-            $this->pdo->exec($query_table_indexes);
+            // indexes
+            $query_table_indexes = $this->prepare_table_indexes();
+            if ($query_table_indexes)
+                $this->pdo->exec($query_table_indexes);
+        }
 
         // prepare statement
         $query_prepared_statement = $this->prepare_pdo_statement();

@@ -74,6 +74,22 @@ $monologger->notice("File information", [
 ```
 Note: SQLite does not support 'USING method' for indexes;
 
+## Skipping table and index creation
+
+By default the handler runs `CREATE TABLE IF NOT EXISTS` and `CREATE INDEX ...` before its
+first write. If the table and its indexes already exist, pass `auto_create: false` (the
+8th constructor argument) to skip them and only prepare the INSERT:
+
+```php
+$log_handler = new KWPDOHandler($pdo_handler, 'log', [
+    'context'  =>  'jsonb'
+], [], Logger::DEBUG, true, false, auto_create: false);
+```
+
+On PostgreSQL this matters: `CREATE INDEX IF NOT EXISTS` takes a SHARE lock on the table
+even when the index already exists, so with `auto_create` on, every handler's first write
+waits for, and blocks, concurrent INSERTs into the log table.
+
 # ToDo
 
 - [ ] Check and override default field definitions
